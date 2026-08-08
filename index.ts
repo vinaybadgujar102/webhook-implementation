@@ -52,13 +52,29 @@ app.use(
 app.post("/webhook/payment", (req, res) => {
   try {
     const signature = req.header("X-Webhook-Signature");
-    if (!signature || !req.rawBody) {
+    const timestamp = req.header("X-Webhook-Timestamp");
+
+    if (!signature || !req.rawBody || !timestamp) {
       return res.sendStatus(201);
     }
 
+    const nowTimestamp = Math.floor(Date.now() / 1000);
+
+    const isValid = nowTimestamp - Number(timestamp);
+
+    if (isValid > 60 * 5) {
+      return res.sendStatus(401);
+    }
+
+    const payloadSigned = Buffer.concat([
+      Buffer.from(timestamp),
+      Buffer.from("."),
+      req.rawBody,
+    ]);
+
     const expected = crypto
       .createHmac("sha256", "SECRET")
-      .update(req.rawBody)
+      .update(payloadSigned)
       .digest("hex");
 
     if (expected !== signature) {
