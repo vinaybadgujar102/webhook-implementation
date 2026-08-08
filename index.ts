@@ -12,6 +12,28 @@ import z from "zod";
 //   }
 // }
 
+interface EventStore {
+  hasProcessed(eventId: string): boolean;
+  markProcessed(eventId: string): void;
+}
+
+class Store implements EventStore {
+  processedIds = new Map<string, boolean>();
+
+  constructor() {}
+
+  hasProcessed(eventId: string): boolean {
+    return this.processedIds.has(eventId);
+  }
+
+  async markProcessed(eventId: string): Promise<void> {
+    await new Promise((resolve) => setTimeout(resolve, 5000));
+    this.processedIds.set(eventId, true);
+  }
+}
+
+const store = new Store();
+
 declare global {
   namespace Express {
     interface Request {
@@ -49,13 +71,13 @@ app.use(
   }),
 );
 
-app.post("/webhook/payment", (req, res) => {
+app.post("/webhook/payment", async (req, res) => {
   try {
     const signature = req.header("X-Webhook-Signature");
     const timestamp = req.header("X-Webhook-Timestamp");
 
     if (!signature || !req.rawBody || !timestamp) {
-      return res.sendStatus(201);
+      return res.sendStatus(401);
     }
 
     const nowTimestamp = Math.floor(Date.now() / 1000);
@@ -82,6 +104,15 @@ app.post("/webhook/payment", (req, res) => {
     }
 
     const paylaod = paymentEventPayloadSchema.parse(req.body);
+
+    if (store.hasProcessed(paylaod.id)) {
+      return res.status(401).json({
+        success: false,
+        message: "Already processed",
+      });
+    }
+
+    await store.markProcessed(paylaod.id);
 
     return res.status(200).json({
       success: true,
