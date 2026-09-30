@@ -12,28 +12,20 @@ import z from "zod";
 //   }
 // }
 
-interface EventStore {
-  hasProcessed(eventId: string): boolean;
-  markProcessed(eventId: string): void;
-}
+class EventStore {
+  private processedEvents = new Set<string>();
 
-class Store implements EventStore {
-  processedIds = new Map<string, boolean>();
+  claim(eventId: string): boolean {
+    if (this.processedEvents.has(eventId)) {
+      return false;
+    }
 
-  constructor() {}
-
-  hasProcessed(eventId: string): boolean {
-    return this.processedIds.has(eventId);
-  }
-
-  async markProcessed(eventId: string): Promise<void> {
-    await new Promise((resolve) => setTimeout(resolve, 5000));
-    this.processedIds.set(eventId, true);
+    this.processedEvents.add(eventId);
+    return true;
   }
 }
 
-const store = new Store();
-
+const store = new EventStore();
 declare global {
   namespace Express {
     interface Request {
@@ -105,14 +97,16 @@ app.post("/webhook/payment", async (req, res) => {
 
     const paylaod = paymentEventPayloadSchema.parse(req.body);
 
-    if (store.hasProcessed(paylaod.id)) {
+    const claimed = store.claim(paylaod.id);
+
+    if (claimed) {
       return res.status(401).json({
         success: false,
         message: "Already processed",
       });
     }
 
-    await store.markProcessed(paylaod.id);
+    console.log("processing");
 
     return res.status(200).json({
       success: true,
